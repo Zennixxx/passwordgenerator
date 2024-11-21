@@ -3,15 +3,24 @@ import re
 import hashlib
 import requests
 
+def load_passwords(filepath):
+    try:
+        with open(filepath, 'r', encoding='utf-8') as file:
+            return [line.strip() for line in file]
+    except FileNotFoundError:
+        print(f"Файл не знайдено")
+        return []
+
 def calc_pass_strength(password):
     score = 0
     issues = []
+    
+    worst_passwords = load_passwords('worst_passwords.txt')
     
     def check_password(password):
         sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
         prefix, suffix = sha1_hash[:5], sha1_hash[5:]
         url = f'https://api.pwnedpasswords.com/range/{prefix}'
-        
         try:
             response = requests.get(url)
             if response.status_code == 200:
@@ -24,10 +33,14 @@ def calc_pass_strength(password):
             return None
     
     leaks_count = check_password(password)
-    if leaks_count is not None:
-        if leaks_count > 1000:
+    try:
+        if leaks_count is None:
+            issues.append("Не вдалося перевірити пароль на витоки")
+        elif leaks_count:
             score -= 2
-            issues.append(f"Цей пароль зустрічається у витоках даних")
+            issues.append(f"Цей пароль був використаний {leaks_count} разів у витоках")
+    except Exception as e:
+        print(e)
     
     if len(password) < 8:
         issues.append("Пароль повинен містити мінімум 8 символів")
@@ -55,13 +68,10 @@ def calc_pass_strength(password):
         score -= 1
         issues.append("Уникайте довгих повторень символів")
     
-    sequences = ('12345', 'qwerty', 'password', 'admin')
-    for seq in sequences:
-        if seq in password.lower():
-            score -= 1
-            issues.append("Пароль містить занадто просту послідовність")
-            break
-            
+    if password.lower() in worst_passwords:
+        score -= 2
+        issues.append("Цей пароль занадто простий")
+
     unique_chars = len(set(password))
     if unique_chars < len(password) / 3:
         score -= 1
